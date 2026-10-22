@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'theme.dart';
 import 'pages/home_page.dart';
 import 'pages/quran_page.dart';
@@ -24,7 +23,6 @@ class QuranApp extends StatefulWidget {
 class QuranAppState extends State<QuranApp> {
   ThemeMode themeMode = ThemeMode.light;
   double quranFontSize = 26.0;
-  String selectedFontFamily = 'Amiri'; // الخط الافتراضي للمخطوطة القرآنية
 
   @override
   void initState() {
@@ -46,16 +44,10 @@ class QuranAppState extends State<QuranApp> {
     StorageService.setQuranFontSize(size);
   }
 
-  void setQuranFontFamily(String font) {
-    setState(() {
-      selectedFontFamily = font;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'رفيق القرآن',
+      title: 'Quran',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
@@ -123,6 +115,7 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
         },
       );
 
+      // احفظ السور أيضاً
       try {
         final surahs = await QuranApi.fetchSurahs();
         await StorageService.saveSurahsCache(surahs);
@@ -158,6 +151,7 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // أيقونة التطبيق
                 Container(
                   width: 120,
                   height: 120,
@@ -200,6 +194,7 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
                   ),
                 ),
                 const SizedBox(height: 48),
+
                 if (_checking) ...[
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
@@ -241,6 +236,31 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceVariant.withOpacity(.5),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 20, color: scheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'يتم التحميل مرة واحدة فقط. بعد ذلك يعمل التطبيق بلا إنترنت.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                              height: 1.6,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ] else if (_error) ...[
                   Icon(Icons.error_outline_rounded,
                       size: 64, color: scheme.error),
@@ -253,11 +273,24 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
                       color: scheme.onSurface,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'تأكد من اتصالك بالإنترنت ثم أعد المحاولة.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _checkAndDownload,
                     icon: const Icon(Icons.refresh_rounded),
                     label: const Text('إعادة المحاولة'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 14),
+                    ),
                   ),
                 ],
               ],
@@ -270,7 +303,7 @@ class _SplashDownloadPageState extends State<SplashDownloadPage> {
 }
 
 // ============================================================
-// الواجهة الرئيسية مع قسم المطور وزر الألوان والخطوط
+// الواجهة الرئيسية
 // ============================================================
 class MainShellPage extends StatefulWidget {
   const MainShellPage({Key? key}) : super(key: key);
@@ -283,18 +316,6 @@ class _MainShellPageState extends State<MainShellPage> {
   int _index = 0;
   ThemeMode _themeMode = ThemeMode.light;
   double _quranFontSize = 26.0;
-  String _currentFont = 'Uthmanic';
-
-  // قائمة خطوط ومخطوطات
-  final List<Map<String, String>> _quranFonts = [
-    {'name': 'المخطوطة العثمانية الأصلية', 'font': 'Uthmanic'},
-    {'name': 'خط حفص عن عاصم', 'font': 'Hafs'},
-    {'name': 'خط الأميري القرآني', 'font': 'Amiri'},
-    {'name': 'خط الرقعة الرقمي', 'font': 'Ruqaa'},
-    {'name': 'خط النسخ الواضح', 'font': 'Naskh'},
-    {'name': 'الخط الكوفي العريق', 'font': 'Kufi'},
-    {'name': 'المخطوطة المغربية', 'font': 'Maghrebi'},
-  ];
 
   @override
   void initState() {
@@ -321,249 +342,11 @@ class _MainShellPageState extends State<MainShellPage> {
     setState(() => _quranFontSize = size);
   }
 
-  Future<void> _openUrl(String urlString) async {
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر فتح الرابط: $urlString')),
-      );
-    }
-  }
-
-  // نافذة اختيار المخطوطة/الخط
-  void _showFontSelector() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'اختر خط/مخطوطة المصحف',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  ],
-                ),
-                const Divider(),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _quranFonts.length,
-                    itemBuilder: (context, index) {
-                      final item = _quranFonts[index];
-                      final isSelected = item['font'] == _currentFont;
-                      return ListTile(
-                        leading: Icon(
-                          Icons.font_download_rounded,
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        title: Text(item['name']!),
-                        trailing: isSelected
-                            ? Icon(Icons.check_circle,
-                                color: Theme.of(context).colorScheme.primary)
-                            : null,
-                        onTap: () {
-                          setState(() {
-                            _currentFont = item['font']!;
-                          });
-                          final appState = context
-                              .findAncestorStateOfType<QuranAppState>();
-                          appState?.setQuranFontFamily(_currentFont);
-                          Navigator.pop(context);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('رفيق القرآن'),
-          centerTitle: true,
-          actions: [
-            // زر تغيير المخطوطة/الخط
-            IconButton(
-              icon: const Icon(Icons.text_fields_rounded),
-              tooltip: 'تغيير خط المخطوطة',
-              onPressed: _showFontSelector,
-            ),
-            // زر اللون / الوضع الليلي والنهاري
-            IconButton(
-              icon: Icon(
-                _themeMode == ThemeMode.dark
-                    ? Icons.wb_sunny_rounded
-                    : Icons.nightlight_round,
-              ),
-              tooltip: 'تغيير الثيم / الألوان',
-              onPressed: _toggleTheme,
-            ),
-          ],
-          leading: Builder(
-            builder: (context) => IconButton(
-              icon: CircleAvatar(
-                radius: 14,
-                backgroundColor: scheme.primary.withOpacity(0.2),
-                child: Icon(Icons.code_rounded, size: 18, color: scheme.primary),
-              ),
-              tooltip: 'قسم المطور',
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            ),
-          ),
-        ),
-
-        // ==========================================
-        // قسم المطور (القائمة الجانبية Drawer الطويلة)
-        // ==========================================
-        drawer: Drawer(
-          child: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Column(
-              children: [
-                UserAccountsDrawerHeader(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [scheme.primary, scheme.tertiary],
-                      begin: Alignment.topRight,
-                      end: Alignment.bottomLeft,
-                    ),
-                  ),
-                  currentAccountPicture: CircleAvatar(
-                    radius: 36,
-                    backgroundImage: const NetworkImage(
-                      'https://i.ibb.co/q3z26DWm/image.png',
-                    ),
-                    backgroundColor: scheme.surface,
-                  ),
-                  accountName: const Text(
-                    'زيكو الأسطورة',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  accountEmail: const Text(
-                    'مطور التطبيق والحلول البرمجية',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                        child: Text('تواصل ومعلومات المطور'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.chat_outlined,
-                            color: Colors.green),
-                        title: const Text('واتساب المطور'),
-                        subtitle: const Text('967771620853+'),
-                        onTap: () => _openUrl('https://wa.me/967771620853'),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.campaign_outlined,
-                            color: Colors.green),
-                        title: const Text('قناة الواتساب الرسمية'),
-                        trailing: const Icon(Icons.arrow_forward_ios_rounded,
-                            size: 14),
-                        onTap: () => _openUrl(
-                            'https://whatsapp.com/channel/0029VbDPwPz3GJP3uEUAOf17'),
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.telegram_rounded,
-                            color: Colors.blue),
-                        title: const Text('قناة التليجرام العامة'),
-                        subtitle: const Text('@W_78_22'),
-                        onTap: () => _openUrl('https://t.me/W_78_22'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.telegram_rounded,
-                            color: Colors.blue),
-                        title: const Text('قناة التليجرام الرئيسية'),
-                        subtitle: const Text('@W_78_23'),
-                        onTap: () => _openUrl('https://t.me/W_78_23'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.telegram_rounded,
-                            color: Colors.blue),
-                        title: const Text('قناة البرمجيات والتطبيقات'),
-                        subtitle: const Text('@ZCQ2_g'),
-                        onTap: () => _openUrl('https://t.me/ZCQ2_g'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.telegram_rounded,
-                            color: Colors.blue),
-                        title: const Text('قناة الدعم والملاحظات'),
-                        subtitle: const Text('@ABO_SB'),
-                        onTap: () => _openUrl('https://t.me/ABO_SB'),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(16.0),
-                  color: scheme.surfaceVariant.withOpacity(0.3),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.copyright_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'جميع الحقوق محفوظة © زيكو الأسطورة',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
         body: IndexedStack(
           index: _index,
           children: [
