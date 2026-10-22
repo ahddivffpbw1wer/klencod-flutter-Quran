@@ -1,244 +1,610 @@
-package com.ziko.islamicapp;
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'theme.dart';
+import 'pages/home_page.dart';
+import 'pages/quran_page.dart';
+import 'pages/saved_page.dart';
+import 'pages/settings_page.dart';
+import 'services/storage_service.dart';
+import 'services/quran_api.dart';
 
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.os.Build;
-import android.os.Bundle;
-import android.view.View;
-import android.webkit.CookieManager;
-import android.webkit.GeolocationPermissions;
-import android.webkit.PermissionRequest;
-import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.Toast;
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await StorageService.init();
+  runApp(const QuranApp());
+}
 
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
+class QuranApp extends StatefulWidget {
+  const QuranApp({Key? key}) : super(key: key);
 
-public class MainActivity extends AppCompatActivity {
+  @override
+  State<QuranApp> createState() => QuranAppState();
+}
 
-    private WebView webView;
-    private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
+class QuranAppState extends State<QuranApp> {
+  ThemeMode themeMode = ThemeMode.light;
+  double quranFontSize = 26.0;
+  String selectedFontFamily = 'Amiri'; // الخط الافتراضي للمخطوطة القرآنية
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        
-        // إخفاء الشريط العلوي للاستفادة الكاملة من الشاشة
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().hide();
-        }
+  @override
+  void initState() {
+    super.initState();
+    themeMode = StorageService.getThemeMode();
+    quranFontSize = StorageService.getQuranFontSize();
+  }
 
-        webView = new WebView(this);
-        setContentView(webView);
+  void toggleTheme() {
+    setState(() {
+      themeMode =
+          themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    });
+    StorageService.setThemeMode(themeMode);
+  }
 
-        setupWebViewSettings();
-        checkLocationPermissions();
+  void setQuranFontSize(double size) {
+    setState(() => quranFontSize = size);
+    StorageService.setQuranFontSize(size);
+  }
+
+  void setQuranFontFamily(String font) {
+    setState(() {
+      selectedFontFamily = font;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'رفيق القرآن',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
+      home: const SplashDownloadPage(),
+    );
+  }
+}
+
+// ============================================================
+// شاشة التحميل الأولى
+// ============================================================
+class SplashDownloadPage extends StatefulWidget {
+  const SplashDownloadPage({Key? key}) : super(key: key);
+
+  @override
+  State<SplashDownloadPage> createState() => _SplashDownloadPageState();
+}
+
+class _SplashDownloadPageState extends State<SplashDownloadPage> {
+  bool _checking = true;
+  bool _downloading = false;
+  bool _error = false;
+  int _current = 0;
+  int _total = 114;
+  String _surahName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAndDownload();
+  }
+
+  Future<void> _checkAndDownload() async {
+    setState(() {
+      _checking = true;
+      _error = false;
+    });
+
+    if (StorageService.isFullQuranReady()) {
+      if (!mounted) return;
+      _goToApp();
+      return;
     }
 
-    private void setupWebViewSettings() {
-        WebSettings webSettings = webView.getSettings();
-        webSettings.setJavaScriptEnabled(true);
-        webSettings.setDomStorageEnabled(true);
-        webSettings.setDatabaseEnabled(true);
-        webSettings.setLoadsImagesAutomatically(true);
-        webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        webSettings.setGeolocationEnabled(true);
-        webSettings.setUseWideViewPort(true);
-        webSettings.setLoadWithOverviewMode(true);
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _downloading = true;
+    });
 
-        // تفعيل ملفات تعريف الارتباط الكوكيز (Cookies)
-        CookieManager.getInstance().setAcceptCookie(true);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-        }
+    await _downloadQuran();
+  }
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                view.loadUrl(url);
-                return true;
-            }
-        });
+  Future<void> _downloadQuran() async {
+    try {
+      final fullQuran = await QuranApi.fetchFullQuran(
+        onProgress: (current, total, surahName) {
+          if (!mounted) return;
+          setState(() {
+            _current = current;
+            _total = total;
+            _surahName = surahName.replaceAll('سُورَةُ ', '');
+          });
+        },
+      );
 
-        webView.setWebChromeClient(new WebChromeClient() {
-            // دعم تحديد الموقع الجغرافي لمواقيت الصلاة الدقيقة
-            @Override
-            public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                callback.invoke(origin, true, false);
-            }
+      try {
+        final surahs = await QuranApi.fetchSurahs();
+        await StorageService.saveSurahsCache(surahs);
+      } catch (_) {}
 
-            // دعم الأذونات الصوتية لتشغيل سور القرآن والمقاطع الخارجية
-            @Override
-            public void onPermissionRequest(PermissionRequest request) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Lollipop) {
-                    request.grant(request.getResources());
-                }
-            }
-        });
+      await StorageService.saveFullQuran(fullQuran);
 
-        // تحميل كود التطبيق الإسلامي الشامل
-        loadIslamicAppHTML();
+      if (!mounted) return;
+      _goToApp();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _error = true;
+      });
     }
+  }
 
-    private void loadIslamicAppHTML() {
-        String htmlContent = "<!DOCTYPE html>\n" +
-                "<html lang=\"ar\" dir=\"rtl\" class=\"theme-light\">\n" +
-                "<head>\n" +
-                "    <meta charset=\"UTF-8\">\n" +
-                "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n" +
-                "    <title>التطبيق الإسلامي الشامل - ابي المقداد الخوخي</title>\n" +
-                "    <script src=\"https://cdn.tailwindcss.com\"></script>\n" +
-                "    <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css\">\n" +
-                "    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n" +
-                "    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n" +
-                "    <link href=\"https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@300;400;500;700;800&display=swap\" rel=\"stylesheet\">\n" +
-                "    <script>\n" +
-                "        tailwind.config = {\n" +
-                "            theme: {\n" +
-                "                extend: {\n" +
-                "                    colors: {\n" +
-                "                        themeBg: 'var(--bg-main)',\n" +
-                "                        themeCard: 'var(--bg-card)',\n" +
-                "                        themeText: 'var(--text-main)',\n" +
-                "                        themeMuted: 'var(--text-muted)',\n" +
-                "                        themeBorder: 'var(--border-color)',\n" +
-                "                        themeAccent: 'var(--accent-color)',\n" +
-                "                        themePrimary: 'var(--primary-color)',\n" +
-                "                    },\n" +
-                "                    fontFamily: {\n" +
-                "                        tajawal: ['Tajawal', 'sans-serif'],\n" +
-                "                        amiri: ['Amiri', 'serif'],\n" +
-                "                    }\n" +
-                "                }\n" +
-                "            }\n" +
-                "        }\n" +
-                "    </script>\n" +
-                "    <style>\n" +
-                "        :root.theme-light { --bg-main: #f8f9fa; --bg-card: #ffffff; --text-main: #4a3525; --text-muted: #8c735d; --border-color: #f1c40f; --accent-color: #8b5a2b; --primary-color: #d97706; --card-shadow: 0 4px 20px rgba(139, 90, 43, 0.08); }\n" +
-                "        :root.theme-dark { --bg-main: #0b1311; --bg-card: #12211c; --text-main: #f3f4f6; --text-muted: #a3b8b0; --border-color: #d4af37; --accent-color: #e6c280; --primary-color: #d4af37; --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }\n" +
-                "        :root.theme-emerald { --bg-main: #f0fdf4; --bg-card: #ffffff; --text-main: #064e3b; --text-muted: #047857; --border-color: #34d399; --accent-color: #059669; --primary-color: #10b981; --card-shadow: 0 4px 20px rgba(6, 78, 59, 0.08); }\n" +
-                "        :root.theme-blue { --bg-main: #f0f9ff; --bg-card: #ffffff; --text-main: #0c4a6e; --text-muted: #0369a1; --border-color: #38bdf8; --accent-color: #0284c7; --primary-color: #0284c7; --card-shadow: 0 4px 20px rgba(12, 74, 110, 0.08); }\n" +
-                "        body { font-family: 'Tajawal', sans-serif; background-color: var(--bg-main); color: var(--text-main); touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background-color 0.3s ease, color 0.3s ease; }\n" +
-                "        .quran-font { font-family: 'Amiri', serif; }\n" +
-                "        ::-webkit-scrollbar { width: 6px; }\n" +
-                "        ::-webkit-scrollbar-thumb { background: var(--primary-color); border-radius: 4px; }\n" +
-                "        .app-card { background-color: var(--bg-card); border: 1px solid var(--border-color); box-shadow: var(--card-shadow); }\n" +
-                "        .nav-btn.active { color: var(--primary-color); transform: translateY(-2px); }\n" +
-                "    </style>\n" +
-                "</head>\n" +
-                "<body class=\"min-h-screen flex flex-col justify-between pb-24 select-none\">\n" +
-                "    <header class=\"sticky top-0 z-40 app-card border-b px-4 py-3 flex items-center justify-between shadow-sm backdrop-blur-md\">\n" +
-                "        <div class=\"flex items-center gap-3\">\n" +
-                "            <div class=\"w-10 h-10 rounded-full bg-gradient-to-tr from-amber-600 to-yellow-500 flex items-center justify-center text-white font-bold shadow-md\">\n" +
-                "                <i class=\"fa-solid fa-kaaba text-lg\"></i>\n" +
-                "            </div>\n" +
-                "            <div>\n" +
-                "                <h1 class=\"font-bold text-lg leading-tight text-themeAccent\">التطبيق الإسلامي</h1>\n" +
-                "                <p class=\"text-[11px] text-themeMuted font-medium\">حقوق النشر © ابي المقداد الخوخي</p>\n" +
-                "            </div>\n" +
-                "        </div>\n" +
-                "        <div class=\"flex items-center gap-2\">\n" +
-                "            <button onclick=\"toggleThemeMenu()\" class=\"p-2 rounded-xl bg-amber-500/10 text-themeAccent border border-yellow-500/40 text-xs font-semibold\"><i class=\"fa-solid fa-palette\"></i> الألوان</button>\n" +
-                "            <button onclick=\"openDeveloperModal()\" class=\"p-2 rounded-xl bg-amber-500/10 text-themeAccent border border-yellow-500/40 text-xs font-semibold\"><i class=\"fa-solid fa-code\"></i> المطور</button>\n" +
-                "        </div>\n" +
-                "    </header>\n" +
-                "    <div id=\"theme-menu\" class=\"hidden fixed top-16 left-4 z-50 app-card rounded-2xl p-3 shadow-2xl border border-yellow-500/30 flex flex-col gap-2 min-w-[170px]\">\n" +
-                "        <button onclick=\"setAppTheme('theme-light')\" class=\"p-2 text-xs font-bold text-amber-800 text-right\">النسق الفاتح</button>\n" +
-                "        <button onclick=\"setAppTheme('theme-dark')\" class=\"p-2 text-xs font-bold text-gray-200 text-right\">النسق الداكن</button>\n" +
-                "        <button onclick=\"setAppTheme('theme-emerald')\" class=\"p-2 text-xs font-bold text-emerald-800 text-right\">النسق الزمردي</button>\n" +
-                "        <button onclick=\"setAppTheme('theme-blue')\" class=\"p-2 text-xs font-bold text-sky-800 text-right\">النسق الأزرق</button>\n" +
-                "    </div>\n" +
-                "    <main id=\"main-content\" class=\"flex-grow p-4 max-w-4xl mx-auto w-full\"></main>\n" +
-                "    <div id=\"audio-player-container\" class=\"hidden fixed bottom-16 left-0 right-0 z-40 px-3 py-1\">\n" +
-                "        <div class=\"max-w-4xl mx-auto app-card rounded-2xl p-3 shadow-2xl border-2 border-yellow-500 flex flex-col gap-2\">\n" +
-                "            <div class=\"flex items-center justify-between\">\n" +
-                "                <div>\n" +
-                "                    <h4 id=\"audio-surah-title\" class=\"font-bold text-sm text-themeAccent\">اسم المقطع</h4>\n" +
-                "                    <p id=\"audio-reciter-title\" class=\"text-xs text-themeMuted\">القارئ</p>\n" +
-                "                </div>\n" +
-                "                <div class=\"flex items-center gap-3\">\n" +
-                "                    <button onclick=\"toggleAudioPlay()\" id=\"audio-play-btn\" class=\"w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center\"><i class=\"fa-solid fa-play\"></i></button>\n" +
-                "                    <button onclick=\"closeAudioPlayer()\" class=\"text-red-500\"><i class=\"fa-solid fa-xmark text-lg\"></i></button>\n" +
-                "                </div>\n" +
-                "            </div>\n" +
-                "        </div>\n" +
-                "        <audio id=\"global-audio\" class=\"hidden\"></audio>\n" +
-                "    </div>\n" +
-                "    <nav class=\"fixed bottom-0 left-0 right-0 z-50 app-card border-t py-2 px-2 shadow-lg\">\n" +
-                "        <div class=\"max-w-md mx-auto flex justify-around items-center\">\n" +
-                "            <button onclick=\"switchTab('home')\" id=\"nav-home\" class=\"nav-btn active flex flex-col items-center gap-1 text-themeMuted text-xs\"><i class=\"fa-solid fa-house text-lg\"><span>الرئيسية</span></i></button>\n" +
-                "            <button onclick=\"switchTab('quran')\" id=\"nav-quran\" class=\"nav-btn flex flex-col items-center gap-1 text-themeMuted text-xs\"><i class=\"fa-solid fa-book-quran text-lg\"><span>المصحف</span></i></button>\n" +
-                "            <button onclick=\"switchTab('audio')\" id=\"nav-audio\" class=\"nav-btn flex flex-col items-center gap-1 text-themeMuted text-xs\"><i class=\"fa-solid fa-headphones text-lg\"><span>الصوتيات</span></i></button>\n" +
-                "            <button onclick=\"switchTab('azkar')\" id=\"nav-azkar\" class=\"nav-btn flex flex-col items-center gap-1 text-themeMuted text-xs\"><i class=\"fa-solid fa-hands-praying text-lg\"><span>الأذكار</span></i></button>\n" +
-                "            <button onclick=\"switchTab('tasbeeh')\" id=\"nav-tasbeeh\" class=\"nav-btn flex flex-col items-center gap-1 text-themeMuted text-xs\"><i class=\"fa-solid fa-ring text-lg\"><span>المسبحة</span></i></button>\n" +
-                "        </div>\n" +
-                "    </nav>\n" +
-                "    <div id=\"developer-modal\" class=\"fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden\">\n" +
-                "        <div id=\"developer-drawer\" class=\"fixed inset-y-0 right-0 w-full max-w-md app-card p-6 flex flex-col justify-between\">\n" +
-                "            <div>\n" +
-                "                <div class=\"flex justify-between items-center border-b pb-4 mb-6\">\n" +
-                "                    <span class=\"font-bold text-lg text-themeAccent\">قسم المطور</span>\n" +
-                "                    <button onclick=\"closeDeveloperModal()\"><i class=\"fa-solid fa-xmark text-lg text-themeAccent\"></i></button>\n" +
-                "                </div>\n" +
-                "                <div class=\"text-center\">\n" +
-                "                    <h3 class=\"text-xl font-extrabold text-themeAccent\">ابي المقداد الخوخي</h3>\n" +
-                "                    <p class=\"text-xs text-themeMuted mt-2\">مطور ومصمم تطبيقات إسلامية حديثة.</p>\n" +
-                "                </div>\n" +
-                "            </div>\n" +
-                "        </div>\n" +
-                "    </div>\n" +
-                "    <script>\n" +
-                "        let currentTab = 'home';\n" +
-                "        let surahList = [];\n" +
-                "        window.onload = function() { fetchSurahList(); switchTab('home'); };\n" +
-                "        function setAppTheme(t) { document.documentElement.className = t; document.getElementById('theme-menu').classList.add('hidden'); }\n" +
-                "        function toggleThemeMenu() { document.getElementById('theme-menu').classList.toggle('hidden'); }\n" +
-                "        function openDeveloperModal() { document.getElementById('developer-modal').classList.remove('hidden'); }\n" +
-                "        function closeDeveloperModal() { document.getElementById('developer-modal').classList.add('hidden'); }\n" +
-                "        async function fetchSurahList() { try { const res = await fetch('https://api.alquran.cloud/v1/surah'); const d = await res.json(); if(d.code===200) surahList=d.data; } catch(e){} }\n" +
-                "        function switchTab(t) {\n" +
-                "            currentTab = t;\n" +
-                "            const c = document.getElementById('main-content');\n" +
-                "            if(t==='home') c.innerHTML = '<div class=\"app-card p-6 rounded-3xl text-center\">\\n<h2 class=\"text-2xl font-black text-themeAccent mb-2\">مرحباً بك في التطبيق الإسلامي</h2>\\n<p class=\"text-xs text-themeMuted\">تطوير وإشراف: ابي المقداد الخوخي</p>\\n</div>';\n" +
-                "            else if(t==='quran') c.innerHTML = '<div class=\"text-center py-10\">المصحف الشريف (قيد التحميل...)</div>';\n" +
-                "            else if(t==='audio') c.innerHTML = '<div class=\"text-center py-10\">قسم الصوتيات والمرئيات</div>';\n" +
-                "            else if(t==='azkar') c.innerHTML = '<div class=\"text-center py-10\">موسوعة الأذكار والادعية</div>';\n" +
-                "            else if(t==='tasbeeh') c.innerHTML = '<div class=\"text-center py-10\">المسبحة الرقمية التفاعلية</div>';\n" +
-                "        }\n" +
-                "    </script>\n" +
-                "</body>\n" +
-                "</html>";
+  void _goToApp() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const MainShellPage()),
+    );
+  }
 
-        webView.loadDataWithBaseURL("https://app.local", htmlContent, "text/html", "UTF-8", null);
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [scheme.primary, scheme.primary.withOpacity(.6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(32),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withOpacity(.3),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.menu_book_rounded,
+                    size: 64,
+                    color: scheme.onPrimary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'رفيق القرآن',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'رفيقك اليومي مع كتاب الله',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                if (_checking) ...[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  const Text('جارٍ التحقق من البيانات...'),
+                ] else if (_downloading) ...[
+                  Text(
+                    'جارٍ تحضير المصحف',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _surahName.isNotEmpty
+                        ? 'سورة $_surahName'
+                        : 'جارٍ التحميل...',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: LinearProgressIndicator(
+                      value: _total > 0 ? _current / _total : 0,
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$_current من $_total سورة (${_total > 0 ? ((_current / _total) * 100).toStringAsFixed(0) : 0}%)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ] else if (_error) ...[
+                  Icon(Icons.error_outline_rounded,
+                      size: 64, color: scheme.error),
+                  const SizedBox(height: 16),
+                  Text(
+                    'تعذر تحميل المصحف',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _checkAndDownload,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// الواجهة الرئيسية مع قسم المطور وزر الألوان والخطوط
+// ============================================================
+class MainShellPage extends StatefulWidget {
+  const MainShellPage({Key? key}) : super(key: key);
+
+  @override
+  State<MainShellPage> createState() => _MainShellPageState();
+}
+
+class _MainShellPageState extends State<MainShellPage> {
+  int _index = 0;
+  ThemeMode _themeMode = ThemeMode.light;
+  double _quranFontSize = 26.0;
+  String _currentFont = 'Uthmanic';
+
+  // قائمة خطوط ومخطوطات
+  final List<Map<String, String>> _quranFonts = [
+    {'name': 'المخطوطة العثمانية الأصلية', 'font': 'Uthmanic'},
+    {'name': 'خط حفص عن عاصم', 'font': 'Hafs'},
+    {'name': 'خط الأميري القرآني', 'font': 'Amiri'},
+    {'name': 'خط الرقعة الرقمي', 'font': 'Ruqaa'},
+    {'name': 'خط النسخ الواضح', 'font': 'Naskh'},
+    {'name': 'الخط الكوفي العريق', 'font': 'Kufi'},
+    {'name': 'المخطوطة المغربية', 'font': 'Maghrebi'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _themeMode = StorageService.getThemeMode();
+    _quranFontSize = StorageService.getQuranFontSize();
+  }
+
+  void _toggleTheme() {
+    final appState = context.findAncestorStateOfType<QuranAppState>();
+    if (appState != null) {
+      appState.toggleTheme();
+      setState(() {
+        _themeMode = appState.themeMode;
+      });
     }
+  }
 
-    private void checkLocationPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
-        }
+  void _setQuranFontSize(double size) {
+    final appState = context.findAncestorStateOfType<QuranAppState>();
+    if (appState != null) {
+      appState.setQuranFontSize(size);
     }
+    setState(() => _quranFontSize = size);
+  }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "تم تفعيل إذن الموقع الجغرافي بنجاح", Toast.LENGTH_SHORT).show();
-            }
-        }
+  Future<void> _openUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر فتح الرابط: $urlString')),
+      );
     }
+  }
 
-    @Override
-    public void onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
-    }
+  // نافذة اختيار المخطوطة/الخط
+  void _showFontSelector() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'اختر خط/مخطوطة المصحف',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  ],
+                ),
+                const Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _quranFonts.length,
+                    itemBuilder: (context, index) {
+                      final item = _quranFonts[index];
+                      final isSelected = item['font'] == _currentFont;
+                      return ListTile(
+                        leading: Icon(
+                          Icons.font_download_rounded,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
+                        title: Text(item['name']!),
+                        trailing: isSelected
+                            ? Icon(Icons.check_circle,
+                                color: Theme.of(context).colorScheme.primary)
+                            : null,
+                        onTap: () {
+                          setState(() {
+                            _currentFont = item['font']!;
+                          });
+                          final appState = context
+                              .findAncestorStateOfType<QuranAppState>();
+                          appState?.setQuranFontFamily(_currentFont);
+                          Navigator.pop(context);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('رفيق القرآن'),
+          centerTitle: true,
+          actions: [
+            // زر تغيير المخطوطة/الخط
+            IconButton(
+              icon: const Icon(Icons.text_fields_rounded),
+              tooltip: 'تغيير خط المخطوطة',
+              onPressed: _showFontSelector,
+            ),
+            // زر اللون / الوضع الليلي والنهاري
+            IconButton(
+              icon: Icon(
+                _themeMode == ThemeMode.dark
+                    ? Icons.wb_sunny_rounded
+                    : Icons.nightlight_round,
+              ),
+              tooltip: 'تغيير الثيم / الألوان',
+              onPressed: _toggleTheme,
+            ),
+          ],
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: CircleAvatar(
+                radius: 14,
+                backgroundColor: scheme.primary.withOpacity(0.2),
+                child: Icon(Icons.code_rounded, size: 18, color: scheme.primary),
+              ),
+              tooltip: 'قسم المطور',
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+        ),
+
+        // ==========================================
+        // قسم المطور (القائمة الجانبية Drawer الطويلة)
+        // ==========================================
+        drawer: Drawer(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Column(
+              children: [
+                UserAccountsDrawerHeader(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [scheme.primary, scheme.tertiary],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                    ),
+                  ),
+                  currentAccountPicture: CircleAvatar(
+                    radius: 36,
+                    backgroundImage: const NetworkImage(
+                      'https://i.ibb.co/q3z26DWm/image.png',
+                    ),
+                    backgroundColor: scheme.surface,
+                  ),
+                  accountName: const Text(
+                    'زيكو الأسطورة',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  accountEmail: const Text(
+                    'مطور التطبيق والحلول البرمجية',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                        child: Text('تواصل ومعلومات المطور'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.chat_outlined,
+                            color: Colors.green),
+                        title: const Text('واتساب المطور'),
+                        subtitle: const Text('967771620853+'),
+                        onTap: () => _openUrl('https://wa.me/967771620853'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.campaign_outlined,
+                            color: Colors.green),
+                        title: const Text('قناة الواتساب الرسمية'),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                            size: 14),
+                        onTap: () => _openUrl(
+                            'https://whatsapp.com/channel/0029VbDPwPz3GJP3uEUAOf17'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.telegram_rounded,
+                            color: Colors.blue),
+                        title: const Text('قناة التليجرام العامة'),
+                        subtitle: const Text('@W_78_22'),
+                        onTap: () => _openUrl('https://t.me/W_78_22'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.telegram_rounded,
+                            color: Colors.blue),
+                        title: const Text('قناة التليجرام الرئيسية'),
+                        subtitle: const Text('@W_78_23'),
+                        onTap: () => _openUrl('https://t.me/W_78_23'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.telegram_rounded,
+                            color: Colors.blue),
+                        title: const Text('قناة البرمجيات والتطبيقات'),
+                        subtitle: const Text('@ZCQ2_g'),
+                        onTap: () => _openUrl('https://t.me/ZCQ2_g'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.telegram_rounded,
+                            color: Colors.blue),
+                        title: const Text('قناة الدعم والملاحظات'),
+                        subtitle: const Text('@ABO_SB'),
+                        onTap: () => _openUrl('https://t.me/ABO_SB'),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(16.0),
+                  color: scheme.surfaceVariant.withOpacity(0.3),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.copyright_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        'جميع الحقوق محفوظة © زيكو الأسطورة',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        body: IndexedStack(
+          index: _index,
+          children: [
+            HomePage(onGoToQuran: () => setState(() => _index = 1)),
+            QuranPage(quranFontSize: _quranFontSize),
+            const SavedPage(),
+            SettingsPage(
+              isDarkMode: _themeMode == ThemeMode.dark,
+              onThemeChanged: _toggleTheme,
+              quranFontSize: _quranFontSize,
+              onQuranFontSizeChanged: _setQuranFontSize,
+            ),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (value) => setState(() => _index = value),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'الرئيسية',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.menu_book_outlined),
+              selectedIcon: Icon(Icons.menu_book_rounded),
+              label: 'المصحف',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bookmark_outline_rounded),
+              selectedIcon: Icon(Icons.bookmark_rounded),
+              label: 'المحفوظات',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: 'الإعدادات',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
