@@ -1,392 +1,273 @@
 import 'package:flutter/material.dart';
-import 'theme.dart';
-import 'pages/home_page.dart';
-import 'pages/quran_page.dart';
-import 'pages/saved_page.dart';
-import 'pages/settings_page.dart';
-import 'services/storage_service.dart';
-import 'services/quran_api.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await StorageService.init();
-  runApp(const QuranApp());
+void main() {
+  runApp(const MarketingApp());
 }
 
-class QuranApp extends StatefulWidget {
-  const QuranApp({Key? key}) : super(key: key);
-
-  @override
-  State<QuranApp> createState() => QuranAppState();
-}
-
-class QuranAppState extends State<QuranApp> {
-  ThemeMode themeMode = ThemeMode.light;
-  double quranFontSize = 26.0;
-
-  @override
-  void initState() {
-    super.initState();
-    themeMode = StorageService.getThemeMode();
-    quranFontSize = StorageService.getQuranFontSize();
-  }
-
-  void toggleTheme() {
-    setState(() {
-      themeMode =
-          themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-    });
-    StorageService.setThemeMode(themeMode);
-  }
-
-  void setQuranFontSize(double size) {
-    setState(() => quranFontSize = size);
-    StorageService.setQuranFontSize(size);
-  }
+class MarketingApp extends StatelessWidget {
+  const MarketingApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Quran',
+      title: 'تطبيق التسويق الذكي',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: themeMode,
-      home: const SplashDownloadPage(),
+      theme: ThemeData(
+        primarySwatch: Colors.deepPurple,
+        scaffoldBackgroundColor: Colors.grey[100],
+        fontFamily: 'Cairo', // يمكنك استبداله بأي خط متوفر لديك
+      ),
+      // دعم اللغة العربية والاتجاه من اليمين لليسار
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
+      },
+      home: const HomeScreen(),
     );
   }
 }
 
-// ============================================================
-// شاشة التحميل الأولى
-// ============================================================
-class SplashDownloadPage extends StatefulWidget {
-  const SplashDownloadPage({Key? key}) : super(key: key);
+// نموذج البيانات (Product Model)
+class Product {
+  final String title;
+  final String subtitle;
+  final String price;
+  final String imageUrl;
+  final double rating;
 
-  @override
-  State<SplashDownloadPage> createState() => _SplashDownloadPageState();
+  Product({
+    required this.title,
+    required this.subtitle,
+    required this.price,
+    required this.imageUrl,
+    required this.rating,
+  });
 }
 
-class _SplashDownloadPageState extends State<SplashDownloadPage> {
-  bool _checking = true;
-  bool _downloading = false;
-  bool _error = false;
-  int _current = 0;
-  int _total = 114;
-  String _surahName = '';
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
-  @override
-  void initState() {
-    super.initState();
-    _checkAndDownload();
-  }
-
-  Future<void> _checkAndDownload() async {
-    setState(() {
-      _checking = true;
-      _error = false;
-    });
-
-    if (StorageService.isFullQuranReady()) {
-      if (!mounted) return;
-      _goToApp();
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _checking = false;
-      _downloading = true;
-    });
-
-    await _downloadQuran();
-  }
-
-  Future<void> _downloadQuran() async {
-    try {
-      final fullQuran = await QuranApi.fetchFullQuran(
-        onProgress: (current, total, surahName) {
-          if (!mounted) return;
-          setState(() {
-            _current = current;
-            _total = total;
-            _surahName = surahName.replaceAll('سُورَةُ ', '');
-          });
-        },
-      );
-
-      // احفظ السور أيضاً
-      try {
-        final surahs = await QuranApi.fetchSurahs();
-        await StorageService.saveSurahsCache(surahs);
-      } catch (_) {}
-
-      await StorageService.saveFullQuran(fullQuran);
-
-      if (!mounted) return;
-      _goToApp();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _downloading = false;
-        _error = true;
-      });
-    }
-  }
-
-  void _goToApp() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const MainShellPage()),
-    );
-  }
+  // قائمة وهمية للمنتجات أو العروض التسويقية
+  final List<Product> products = const [
+    Product(
+      title: 'باقة التسويق الرقمي الشاملة',
+      subtitle: 'إعلانات ممولة + إدارة صفحات',
+      price: '\$299',
+      imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=500',
+      rating: 4.8,
+    ),
+    Product(
+      title: 'تصميم هوية بصرية متكاملة',
+      subtitle: 'شعار، ألوان، ومطبوعات',
+      price: '\$150',
+      imageUrl: 'https://images.unsplash.com/photo-1542744094-3a31f272c490?w=500',
+      rating: 4.9,
+    ),
+    Product(
+      title: 'استراتيجية تحسين محركات البحث SEO',
+      subtitle: 'تصدر نتائج جوجل الأولى',
+      price: '\$200',
+      imageUrl: 'https://images.unsplash.com/photo-1533750349077-cdcd1ec51543?w=500',
+      rating: 4.7,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // أيقونة التطبيق
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [scheme.primary, scheme.primary.withOpacity(.6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+      appBar: AppBar(
+        title: const Text('منصة التسويق الذكي', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
+            onPressed: () {},
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // قسم البانر الإعلاني (Banner)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Colors.deepPurple, Colors.purpleAccent],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'عروض حصرية لفترة محدودة! 🔥',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
-                    borderRadius: BorderRadius.circular(32),
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.primary.withOpacity(.3),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.menu_book_rounded,
-                    size: 64,
-                    color: scheme.onPrimary,
-                  ),
+                    SizedBox(height: 8),
+                    Text(
+                      'احصل على خصم 30% على خدمات التسويق',
+                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 12),
+                    Chip(
+                      label: Text('اطلب الخدمة الآن', style: TextStyle(color: Colors.deepPurple)),
+                      backgroundColor: Colors.white,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  'رفيق القرآن',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'رفيقك اليومي مع كتاب الله',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 48),
+              ),
+              const SizedBox(height: 24),
 
-                if (_checking) ...[
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  const Text('جارٍ التحقق من البيانات...'),
-                ] else if (_downloading) ...[
-                  Text(
-                    'جارٍ تحضير المصحف',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _surahName.isNotEmpty
-                        ? 'سورة $_surahName'
-                        : 'جارٍ التحميل...',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: LinearProgressIndicator(
-                      value: _total > 0 ? _current / _total : 0,
-                      minHeight: 8,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '$_current من $_total سورة (${_total > 0 ? ((_current / _total) * 100).toStringAsFixed(0) : 0}%)',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceVariant.withOpacity(.5),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline_rounded,
-                            size: 20, color: scheme.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'يتم التحميل مرة واحدة فقط. بعد ذلك يعمل التطبيق بلا إنترنت.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: scheme.onSurfaceVariant,
-                              height: 1.6,
+              // الأقسام (Categories)
+              const Text(
+                'الأقسام التسويقية',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 90,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: const [
+                    CategoryItem(icon: Icons.campaign, title: 'إعلانات ممولة'),
+                    CategoryItem(icon: Icons.brush, title: 'تصميم وبصريات'),
+                    CategoryItem(icon: Icons.trending_up, title: 'خدمات SEO'),
+                    CategoryItem(icon: Icons.code, title: 'تطوير مواقع'),
+                    CategoryItem(icon: Icons.chat, title: 'إدارة محتوى'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // قائمة الخدمات / المنتجات المميزة
+              const Text(
+                'الخدمات المميزة',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: products.length,
+                itemBuilder: (context, index) {
+                  final product = products[index];
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              product.imageUrl,
+                              width: 90,
+                              height: 90,
+                              fit: BoxFit.cover,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  product.title,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  product.subtitle,
+                                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      product.price,
+                                      style: const TextStyle(
+                                          color: Colors.deepPurple,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16),
+                                    ),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                                        const SizedBox(width: 4),
+                                        Text('${product.rating}', style: const TextStyle(fontSize: 12)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ] else if (_error) ...[
-                  Icon(Icons.error_outline_rounded,
-                      size: 64, color: scheme.error),
-                  const SizedBox(height: 16),
-                  Text(
-                    'تعذر تحميل المصحف',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'تأكد من اتصالك بالإنترنت ثم أعد المحاولة.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _checkAndDownload,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('إعادة المحاولة'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 32, vertical: 14),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.deepPurple,
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
+          BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'استكشف'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'حسابي'),
+        ],
       ),
     );
   }
 }
 
-// ============================================================
-// الواجهة الرئيسية
-// ============================================================
-class MainShellPage extends StatefulWidget {
-  const MainShellPage({Key? key}) : super(key: key);
+// عنصر القسم الأفقي
+class CategoryItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+
+  const CategoryItem({super.key, required this.icon, required this.title});
 
   @override
-  State<MainShellPage> createState() => _MainShellPageState();
-}
-
-class _MainShellPageState extends State<MainShellPage> {
-  int _index = 0;
-  ThemeMode _themeMode = ThemeMode.light;
-  double _quranFontSize = 26.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _themeMode = StorageService.getThemeMode();
-    _quranFontSize = StorageService.getQuranFontSize();
-  }
-
-  void _toggleTheme() {
-    final appState = context.findAncestorStateOfType<QuranAppState>();
-    if (appState != null) {
-      appState.toggleTheme();
-      setState(() {
-        _themeMode = appState.themeMode;
-      });
-    }
-  }
-
-  void _setQuranFontSize(double size) {
-    final appState = context.findAncestorStateOfType<QuranAppState>();
-    if (appState != null) {
-      appState.setQuranFontSize(size);
-    }
-    setState(() => _quranFontSize = size);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        body: IndexedStack(
-          index: _index,
-          children: [
-            HomePage(onGoToQuran: () => setState(() => _index = 1)),
-            QuranPage(quranFontSize: _quranFontSize),
-            const SavedPage(),
-            SettingsPage(
-              isDarkMode: _themeMode == ThemeMode.dark,
-              onThemeChanged: _toggleTheme,
-              quranFontSize: _quranFontSize,
-              onQuranFontSizeChanged: _setQuranFontSize,
+  Widget build(Context context) {
+    return Container(
+      width: 80,
+      margin: const EdgeInsets.only(left: 12),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.shade50,
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: (value) => setState(() => _index = value),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'الرئيسية',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.menu_book_outlined),
-              selectedIcon: Icon(Icons.menu_book_rounded),
-              label: 'المصحف',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bookmark_outline_rounded),
-              selectedIcon: Icon(Icons.bookmark_rounded),
-              label: 'المحفوظات',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
-              label: 'الإعدادات',
-            ),
-          ],
-        ),
+            child: Icon(icon, color: Colors.deepPurple),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
